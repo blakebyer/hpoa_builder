@@ -183,11 +183,11 @@ with col2:
         hide_index=True
     )
 
+    st.page_link("https://hpo-annotation-qc.readthedocs.io/en/latest/annotationFormat.html", label="HPOA Format", icon="ℹ️")
+
     if selection_event.selection:
         selected_indices = selection_event.selection["rows"]
         selected_rows = filtered_df.iloc[selected_indices]
-
-        st.page_link("https://hpo-annotation-qc.readthedocs.io/en/latest/annotationFormat.html", label="HPOA Format", icon="ℹ️")
 
         if st.button("Edit selected rows"):
             st.session_state.editing_rows = selected_rows.copy()
@@ -195,6 +195,6 @@ with col2:
         
     if "editing_rows" in st.session_state:
         st.subheader("Edit HPOA")
-        edited = st.data_editor(st.session_state.editing_rows, hide_index=True, num_rows="dynamic")
+        edited = st.data_editor(st.session_state.editing_rows, num_rows="dynamic")
 
 # st.sidebar.write(return_select)
