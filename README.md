@@ -11,7 +11,7 @@ An interactive **Streamlit app** for browsing diseases, editing HPO annotations,
 - **PubMed + LLM Agent:**
     Coming soon, with help from Aurelian.
 - **Monarch-style UI:**
-    Custom colors and UI elements styled to match the [Monarch Initiative](https://monarchinitiative.org)
+    Custom colors and UI elements styled to match the [Monarch Initiative](https://monarchinitiative.org).
 
 ## Quick Start ##
 Clone and install:
