@@ -243,7 +243,6 @@ with col1:
         expanded = expanded_values(filtered) if q else []
     
         with st.container(height=500, border=False):
-            st.markdown()
             selected = tree_select(
                 nodes=filtered,
                 expanded=expanded,
@@ -274,7 +273,7 @@ with col2:
     st.markdown("""
     <style>
         .stMultiSelect [data-baseweb=select] span{
-            max-width: 250px;
+            max-width: 300px;
             font-size: 1rem;
         }
     </style>
