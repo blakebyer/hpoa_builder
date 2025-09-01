@@ -15,11 +15,13 @@ An interactive **Streamlit app** for browsing diseases, editing HPO annotations,
 
 ## Quick Start ##
 Clone and install:
+
     git clone https://github.com/blakebyer/hpoa_builder.git
     cd src/
     pip install requirements.txt
 
 Run the app:
+
     streamlit run app.py
 
 ## Screenshot ##
