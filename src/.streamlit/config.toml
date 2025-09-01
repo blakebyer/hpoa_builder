@@ -1,2 +1,7 @@
 [theme]
-base="light"
+base = "light"
+primaryColor = "#00A8A8"             # teal accents
+backgroundColor = "#FFFFFF"          # white page background
+secondaryBackgroundColor = "#F8FAFC" # light gray cards
+textColor = "#1F2937"                # dark gray text
+font = "sans serif"

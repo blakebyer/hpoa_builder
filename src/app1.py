@@ -7,8 +7,10 @@
 import numpy as np
 import pandas as pd
 import streamlit as st
-#from streamlit_tree_select import tree_select
-from st_ant_tree import st_ant_tree
+from contextlib import contextmanager
+from streamlit_tree_select import tree_select
+import streamlit_antd_components as sac
+# from st_ant_tree import st_ant_tree
 from hpotk.model import TermId, MinimalTerm
 from hpotk.ontology import MinimalOntology, create_minimal_ontology
 from hpotk.graph import CsrIndexedGraphFactory
@@ -94,33 +96,136 @@ def build_tree(ontology, term_id="HP:0000001", path=""):
         "children": children_nodes
     }
 
+# Style
+st.set_page_config(layout="wide")
+
+st.markdown("""
+<style>
+/* ------------------------------
+   GLOBAL THEME
+------------------------------ */
+html, body, [class*="css"] {
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  color: #1F2937; /* dark gray text */
+  background-color: #FFFFFF; /* light bg like Monarch pages */
+}
+
+/* Hover/focus state for better a11y */
+.rct-tree .rct-node:hover .rct-icon { 
+  color: #009191 !important; 
+}
+.rct-tree .rct-node:focus-within .rct-icon { 
+  outline: 2px solid rgba(0,168,168,0.35); 
+  outline-offset: 2px; 
+}
+            
+/* ------------------------------
+   SLIDERS
+------------------------------ */
+.stSlider > div[data-baseweb="slider"] [role="slider"] {
+  background-color: #00A8A8 !important; /* teal handle */
+  border: 2px solid #00A8A8 !important;
+}
+.stSlider > div[data-baseweb="slider"] > div > div {
+  background: #00A8A8 !important; /* teal track */
+}
+
+/* ------------------------------
+   MULTISELECT TAGS / PILLS
+------------------------------ */
+div[data-baseweb="tag"] {
+  border-radius: 999px !important;
+  padding: 2px 10px !important;
+  background: #F1F5F9 !important;   /* light gray */
+  border: 1px solid #E2E8F0 !important;
+  color: #374151 !important;        /* dark gray text */
+}
+div[data-baseweb="tag"] span {
+  max-width: none !important;
+  white-space: nowrap !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+
+/* ------------------------------
+   BUTTONS
+------------------------------ */
+.stButton > button {
+  border-radius: 10px !important;
+  font-weight: 600 !important;
+  color: white !important;
+  border: none !important;
+  padding: 0.5rem 1rem !important;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+  background-color: #00A8A8 !important; /* default teal */
+}
+
+/* Secondary-style button */
+.stButton > button[kind="secondary"] {
+  background-color: #E6F6F6 !important;
+  color: #007777 !important;
+  border: 1px solid #89D7D7 !important;
+}
+
+/* ------------------------------
+   DATAFRAMES & EDITORS
+------------------------------ */
+.stDataFrame, .stDataEditor {
+  border-radius: 12px !important;
+  box-shadow: 0 3px 12px rgba(0,0,0,0.05);
+  background-color: #FFFFFF !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 ## Pretty tree viewer
 st.set_page_config(layout="wide")
 st.title("HPOA Builder")
 
-@st.cache_resource()
+@st.cache_resource(show_spinner = "Loading HPO...")
 def load_minimal_hpo():
     url = "https://purl.obolibrary.org/obo/hp.json"
     return load_minimal_ontology(url, prefix="HP")
 
 hpo = load_minimal_hpo()
-hpo_tree = [ build_tree(hpo) ] # must be a list
+HPO_TREE = [ build_tree(hpo) ] # must be a list
 
-@st.cache_resource()
+@st.cache_resource(show_spinner = "Loading MONDO...")
 def load_minimal_mondo():
     url = "https://purl.obolibrary.org/obo/mondo.json"
     return load_minimal_ontology(url, prefix="MONDO")
 
 mondo = load_minimal_mondo()
-mondo_tree = [ build_tree(mondo, term_id = "MONDO:0000001") ]
+MONDO_TREE = [ build_tree(mondo, term_id = "MONDO:0700096") ] # only human diseases
 
 # Get HPOA
-@st.cache_resource()
+@st.cache_resource(show_spinner = False)
 def load_hpoa_df():
     url = "https://github.com/obophenotype/human-phenotype-ontology/releases/download/v2025-05-06/phenotype.hpoa?raw=true"
     return pd.read_csv(url, sep="\t", comment="#", dtype=str, index_col=False)
 
 hpoa_df = load_hpoa_df()
+
+# Filter function
+def filter_nodes(nodes, q):
+    if not q: return nodes
+    def keep(n):
+        kids = n.get("children", [])
+        kept = [c for c in (keep(k) for k in kids) if c]
+        match = q in n["label"].lower() or any(kept)
+        if not match: return None
+        out = {"label": n["label"], "value": n["value"]}
+        if kept: out["children"] = kept
+        return out
+    return [n for n in (keep(x) for x in nodes) if n]
+
+def expanded_values(nodes):
+    vals = []
+    for n in nodes:
+        if "children" in n:
+            vals.append(n["value"])
+            vals.extend(expanded_values(n["children"]))
+    return vals
 
 col1, col2 = st.columns([1, 3]) 
 
@@ -133,68 +238,66 @@ with col1:
     )
     
     if ontology_choice == "HPO":
-        # selected = tree_select(
-        #     nodes=hpo_tree,
-        #     check_model="leaf"
-        # )
-        selected = st_ant_tree(
-            treeData=hpo_tree,
-            treeCheckable=False,
-            placeholder="Search",
-            showSearch=True,
-            overall_css="""
-        .ant-select-arrow {
-            display: none !important;
-        }
-    """
-        )
+        q = st.text_input("Search phenotypic abnormality:", placeholder="Search").lower()
+        filtered = filter_nodes(HPO_TREE, q)
+        expanded = expanded_values(filtered) if q else []
+    
+        with st.container(height=500, border=False):
+            st.markdown()
+            selected = tree_select(
+                nodes=filtered,
+                expanded=expanded,
+                check_model="leaf",
+                only_leaf_checkboxes=True,
+            )
+       
     elif ontology_choice == "MONDO":
-        # selected = tree_select(
-        #     nodes=mondo_tree,
-        #     check_model="leaf"
-        # )
-        selected = st_ant_tree(
-            treeData=mondo_tree,
-            treeCheckable=False,
-            placeholder="Search",
-            showSearch=True,
-            overall_css="""
-        .ant-select-arrow {
-            display: none !important;
-        }
-    """
-        )
-
+        q = st.text_input("Search disease:", placeholder="Search").lower()
+        filtered = filter_nodes(MONDO_TREE, q)
+        expanded = expanded_values(filtered) if q else []
+    
+        with st.container(height=500, border=False):
+            selected = tree_select(
+                nodes=filtered,
+                expanded=expanded,
+                check_model="leaf",
+                only_leaf_checkboxes=True,
+            )
+    
+    
 with col2:
     st.header("HPO Annotations")
-    query = st.text_input("Search disease name:")
-    if query:
-        filtered_df = hpoa_df[hpoa_df["disease_name"].str.contains(query, case=False, na=False)]
-    else:
-        filtered_df = hpoa_df
-    
-    # st.data_editor(filtered_df, hide_index=True)
-    selection_event = st.dataframe(
-        filtered_df,
-        selection_mode="multi-row",
-        on_select="rerun",
-        use_container_width=True,
-        key="search_table",
-        hide_index=True
-    )
+    name_series = hpoa_df["disease_name"].astype(str)
+    opts = sorted(hpoa_df["disease_name"].dropna().unique())
+
+    # max width of disease names
+    st.markdown("""
+    <style>
+        .stMultiSelect [data-baseweb=select] span{
+            max-width: 250px;
+            font-size: 1rem;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+    picked = st.multiselect("Select diseases to edit:", options=opts)
+
+    if picked:
+        copy_df = hpoa_df[hpoa_df["disease_name"].isin(picked)].copy().reset_index(drop = True)
+        edited = st.data_editor(
+            copy_df,
+            hide_index=True,
+            num_rows="dynamic",
+            key="edit_copy"
+        )
 
     st.page_link("https://hpo-annotation-qc.readthedocs.io/en/latest/annotationFormat.html", label="HPOA Format", icon="ℹ️")
 
-    if selection_event.selection:
-        selected_indices = selection_event.selection["rows"]
-        selected_rows = filtered_df.iloc[selected_indices]
+    if st.button("Save edits"):
+        st.session_state.edited_copy = edited
+        st.success("Edits saved")
 
-        if st.button("Edit selected rows"):
-            st.session_state.editing_rows = selected_rows.copy()
-    
-        
-    if "editing_rows" in st.session_state:
-        st.subheader("Edit HPOA")
-        edited = st.data_editor(st.session_state.editing_rows, num_rows="dynamic")
+
+
 
 # st.sidebar.write(return_select)
