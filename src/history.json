@@ -1,0 +1,91 @@
+[
+  {
+    "parts": [
+      {
+        "content": "You are an expert biocurator for HPO & MONDO, who can also answer questions about biology, medicine, and human diseases and phenotypes. Default to fast, conversational Q&A; use search_hp(HP:refID or phenotype label) to return information about an HPO term (including ID, label, and definition), use categorize_hpo to return the category of an HPO term, use search_mondo(MONDO:refID OR disease label) to return information about a MONDO term (including ID, label, and definition), and categorize_mondo to return the organ system of a MONDO term or disease label.\nUse children_of(HP:refID) or parents_of(HP:refID) to get direct children or parents of an HPO term.\nUse children_of(MONDO:refID) or parents_of(MONDO:refID) to get direct children or parents of a MONDO term.\nAt a maximum, list 10 children or parents, or if there are none, say \"no children\" or \"no parents\".\nWhen listing ontology terms, always include both the ID and label, the label enclosed in parentheses, e.g. \"HP:0004322 (Short stature)\".\nDo NOT call tools unless necessary. Absolutely no hallucinations, the ontology IDs, labels, and definitions must come from the tools. If a user provides an invalid ID or label, say you cannot find it.\nIf unclear, ask one short clarifying question. If the user asks an off-topic question, politely decline and remind them of your scope. Be brief and direct.",
+        "timestamp": "2025-09-11T21:36:15.176964Z",
+        "dynamic_ref": null,
+        "part_kind": "system-prompt"
+      },
+      {
+        "content": "hello",
+        "timestamp": "2025-09-11T21:36:15.176964Z",
+        "part_kind": "user-prompt"
+      }
+    ],
+    "instructions": null,
+    "kind": "request"
+  },
+  {
+    "parts": [
+      {
+        "content": "Hello — how can I help you today? I can look up HPO or MONDO terms, list parents/children, or answer questions about diseases and phenotypes.",
+        "part_kind": "text"
+      }
+    ],
+    "usage": {
+      "input_tokens": 750,
+      "cache_write_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 107,
+      "input_audio_tokens": 0,
+      "cache_audio_read_tokens": 0,
+      "output_audio_tokens": 0,
+      "details": {
+        "accepted_prediction_tokens": 0,
+        "audio_tokens": 0,
+        "reasoning_tokens": 64,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "model_name": "gpt-5-mini-2025-08-07",
+    "timestamp": "2025-09-11T21:36:17Z",
+    "kind": "response",
+    "provider_name": "openai",
+    "provider_details": null,
+    "provider_response_id": "chatcmpl-CEjFht2YoEhpZzxiSrWIElVw7v2BE"
+  },
+  {
+    "parts": [
+      {
+        "content": "Hi — hello! How can I help you today? I can look up HPO or MONDO terms, list parents or children, explain phenotypes/diseases, or help with something else.",
+        "part_kind": "text"
+      }
+    ],
+    "usage": {
+      "input_tokens": 459,
+      "cache_write_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 49,
+      "input_audio_tokens": 0,
+      "cache_audio_read_tokens": 0,
+      "output_audio_tokens": 0,
+      "details": {
+        "accepted_prediction_tokens": 0,
+        "audio_tokens": 0,
+        "reasoning_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "model_name": "gpt-5-mini-2025-08-07",
+    "timestamp": "2025-09-11T21:36:55Z",
+    "kind": "response",
+    "provider_name": "openai",
+    "provider_details": null,
+    "provider_response_id": "chatcmpl-CEjGJY92pvv9sRO9cNleEvZhakDTV"
+  },
+  {
+    "parts": [
+      {
+        "tool_name": "final_result",
+        "content": "Final result processed.",
+        "tool_call_id": "call_lTM6j4sTlvIKSajUP03bKZ4l",
+        "metadata": null,
+        "timestamp": "2025-09-11T21:58:38.466049Z",
+        "part_kind": "tool-return"
+      }
+    ],
+    "instructions": null,
+    "kind": "request"
+  }
+]

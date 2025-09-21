@@ -1,5 +1,3 @@
-# app1.py
-
 # Components
 # 1. Hierarchy browser of both MONDO and HPO
 # 2. HPOA builder
@@ -10,18 +8,26 @@ import streamlit as st
 from contextlib import contextmanager
 from streamlit_tree_select import tree_select
 import streamlit_antd_components as sac
-# from st_ant_tree import st_ant_tree
+from st_ant_tree import st_ant_tree
 from hpotk.model import TermId, MinimalTerm
 from hpotk.ontology import MinimalOntology, create_minimal_ontology
 from hpotk.graph import CsrIndexedGraphFactory
 from hpotk.util import open_text_io_handle_for_reading
 from hpotk.ontology.load.obographs._model import create_node, create_edge, NodeType
 from hpotk.ontology.load.obographs._factory import MinimalTermFactory
-import json
-import re
-import typing
+from pydantic_ai import Agent
+import json, re, typing, requests, io
+from aurelian.agents.hpoa.hpoa_agent import (
+    hpoa_simple_agent,
+    hpoa_agent,
+    hpoa_reasoning_agent,
+    call_agent_with_retry,
+    call_agent,
+)
 
-PURL_PATTERN = re.compile(r"http://purl\.obolibrary\.org/obo/(?P<curie>(?P<prefix>\w+)_(?P<id>\w+))")
+PURL_PATTERN = re.compile(
+    r"http://purl\.obolibrary\.org/obo/(?P<curie>(?P<prefix>\w+)_(?P<id>\w+))"
+)
 
 def extract_curie_from_purl(purl: str) -> typing.Optional[str]:
     matcher = PURL_PATTERN.match(purl)
@@ -72,7 +78,9 @@ def load_minimal_ontology(url: str, prefix: str = "MONDO") -> MinimalOntology:
         doc = json.load(fh)
 
     obograph = doc["graphs"][0]
-    id_to_term_id, terms = extract_terms_ontology(obograph["nodes"], prefixes_of_interest={prefix})
+    id_to_term_id, terms = extract_terms_ontology(
+        obograph["nodes"], prefixes_of_interest={prefix}
+    )
     edges = create_edge_list(obograph["edges"], id_to_term_id)
     graph = CsrIndexedGraphFactory().create_graph(edges)
     return create_minimal_ontology(graph, terms, version=None)
@@ -81,7 +89,7 @@ def load_minimal_ontology(url: str, prefix: str = "MONDO") -> MinimalOntology:
 def build_tree(ontology, term_id="HP:0000001", path=""):
     term = ontology.get_term(term_id)
     term_name = term.name
-    current_path = f"{path}/{term_name+term_id}" if path else term_name + term_id # make value path-unique
+    current_path = f"{path}/{term_name+term_id}" if path else term_name + term_id
 
     children = ontology.graph.get_children(term) or []
     children_nodes = []
@@ -91,212 +99,182 @@ def build_tree(ontology, term_id="HP:0000001", path=""):
             children_nodes.append(node)
 
     return {
-        "label": f"{term.identifier} | {term.name}",
-        "value": current_path,  # unique per path (allows multiple parenthood)
-        "children": children_nodes
+        "label": f"{term.identifier} ({term.name})",
+        "value": current_path,
+        "children": children_nodes,
     }
 
+# ------------------------------
+# Agent annotation parsing + styling
+# ------------------------------
+def annotations_to_df(result) -> pd.DataFrame:
+    """Flatten agent annotations into a DataFrame with status + rationale."""
+    if not hasattr(result, "output"):
+        return pd.DataFrame()
+
+    data = result.output
+    if hasattr(data, "model_dump"):
+        annotations = data.model_dump().get("annotations") or []
+    elif isinstance(data, dict):
+        annotations = data.get("annotations", [])
+    else:
+        annotations = []
+
+    rows = []
+    for item in annotations:
+        if isinstance(item, dict) and "annotation" in item:
+            row = item["annotation"].copy()
+            row["status"] = "removed"
+            row["rationale"] = item.get("rationale", "")
+        else:
+            row = item.copy()
+            row["status"] = row.get("status", "added")
+            row["rationale"] = row.get("rationale", "")
+        rows.append(row)
+
+    return pd.DataFrame(rows)
+
+def style_agent_edits(df: pd.DataFrame):
+    def highlight(row):
+        if row["status"] == "added":
+            return ["background-color: #d4f4dd"] * len(row)  # green
+        elif row["status"] == "changed":
+            return ["background-color: #fff3cd"] * len(row)  # yellow
+        elif row["status"] == "removed":
+            return ["background-color: #f8d7da"] * len(row)  # red
+        return [""] * len(row)
+    return df.style.apply(highlight, axis=1)
+
+# ------------------------------
 # Style
-st.set_page_config(layout="wide")
-
-st.markdown("""
-<style>
-/* ------------------------------
-   GLOBAL THEME
------------------------------- */
-html, body, [class*="css"] {
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-  color: #1F2937; /* dark gray text */
-  background-color: #FFFFFF; /* light bg like Monarch pages */
-}
-
-/* Hover/focus state for better a11y */
-.rct-tree .rct-node:hover .rct-icon { 
-  color: #009191 !important; 
-}
-.rct-tree .rct-node:focus-within .rct-icon { 
-  outline: 2px solid rgba(0,168,168,0.35); 
-  outline-offset: 2px; 
-}
-            
-/* ------------------------------
-   SLIDERS
------------------------------- */
-.stSlider > div[data-baseweb="slider"] [role="slider"] {
-  background-color: #00A8A8 !important; /* teal handle */
-  border: 2px solid #00A8A8 !important;
-}
-.stSlider > div[data-baseweb="slider"] > div > div {
-  background: #00A8A8 !important; /* teal track */
-}
-
-/* ------------------------------
-   MULTISELECT TAGS / PILLS
------------------------------- */
-div[data-baseweb="tag"] {
-  border-radius: 999px !important;
-  padding: 2px 10px !important;
-  background: #F1F5F9 !important;   /* light gray */
-  border: 1px solid #E2E8F0 !important;
-  color: #374151 !important;        /* dark gray text */
-}
-div[data-baseweb="tag"] span {
-  max-width: none !important;
-  white-space: nowrap !important;
-  overflow: visible !important;
-  text-overflow: clip !important;
-}
-
-/* ------------------------------
-   BUTTONS
------------------------------- */
-.stButton > button {
-  border-radius: 10px !important;
-  font-weight: 600 !important;
-  color: white !important;
-  border: none !important;
-  padding: 0.5rem 1rem !important;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.08);
-  background-color: #00A8A8 !important; /* default teal */
-}
-
-/* Secondary-style button */
-.stButton > button[kind="secondary"] {
-  background-color: #E6F6F6 !important;
-  color: #007777 !important;
-  border: 1px solid #89D7D7 !important;
-}
-
-/* ------------------------------
-   DATAFRAMES & EDITORS
------------------------------- */
-.stDataFrame, .stDataEditor {
-  border-radius: 12px !important;
-  box-shadow: 0 3px 12px rgba(0,0,0,0.05);
-  background-color: #FFFFFF !important;
-}
-</style>
-""", unsafe_allow_html=True)
-
-## Pretty tree viewer
+# ------------------------------
 st.set_page_config(layout="wide")
 st.title("HPOA Builder")
 
-@st.cache_resource(show_spinner = "Loading HPO...")
+@st.cache_resource(show_spinner="Loading HPO...")
 def load_minimal_hpo():
     url = "https://purl.obolibrary.org/obo/hp.json"
     return load_minimal_ontology(url, prefix="HP")
 
 hpo = load_minimal_hpo()
-HPO_TREE = [ build_tree(hpo) ] # must be a list
+HPO_TREE = [build_tree(hpo)]
 
-@st.cache_resource(show_spinner = "Loading MONDO...")
+@st.cache_resource(show_spinner="Loading MONDO...")
 def load_minimal_mondo():
     url = "https://purl.obolibrary.org/obo/mondo.json"
     return load_minimal_ontology(url, prefix="MONDO")
 
 mondo = load_minimal_mondo()
-MONDO_TREE = [ build_tree(mondo, term_id = "MONDO:0700096") ] # only human diseases
+MONDO_TREE = [build_tree(mondo, term_id="MONDO:0700096")]
 
-# Get HPOA
-@st.cache_resource(show_spinner = False)
-def load_hpoa_df():
-    url = "https://github.com/obophenotype/human-phenotype-ontology/releases/download/v2025-05-06/phenotype.hpoa?raw=true"
-    return pd.read_csv(url, sep="\t", comment="#", dtype=str, index_col=False)
+@st.cache_resource(show_spinner="Loading HPO Annotations...")
+def load_hpoa_df() -> pd.DataFrame:
+    r = requests.get(
+        "https://api.github.com/repos/obophenotype/human-phenotype-ontology/releases/latest",
+        timeout=20,
+    )
+    r.raise_for_status()
+    url = next(
+        a["browser_download_url"]
+        for a in r.json().get("assets", [])
+        if "phenotype.hpoa" in a.get("browser_download_url", "")
+    )
+    f = requests.get(url, timeout=60)
+    f.raise_for_status()
+    return pd.read_csv(io.StringIO(f.text), sep="\t", comment="#", dtype=str, keep_default_na=False)
 
 hpoa_df = load_hpoa_df()
 
-# Filter function
-def filter_nodes(nodes, q):
-    if not q: return nodes
-    def keep(n):
-        kids = n.get("children", [])
-        kept = [c for c in (keep(k) for k in kids) if c]
-        match = q in n["label"].lower() or any(kept)
-        if not match: return None
-        out = {"label": n["label"], "value": n["value"]}
-        if kept: out["children"] = kept
-        return out
-    return [n for n in (keep(x) for x in nodes) if n]
+col1, col2 = st.columns([1, 3])
 
-def expanded_values(nodes):
-    vals = []
-    for n in nodes:
-        if "children" in n:
-            vals.append(n["value"])
-            vals.extend(expanded_values(n["children"]))
-    return vals
-
-col1, col2 = st.columns([1, 3]) 
-
+# -------------------
+# Left column with tabs
+# -------------------
 with col1:
-    st.header("Ontology Browser")
+    tab1, tab2 = st.tabs(["Ontology Browser", "Agent"])
 
-    options = ["HPO", "MONDO"]
-    ontology_choice = st.segmented_control(
-    "Select ontology:", options, selection_mode="single"
-    )
-    
-    if ontology_choice == "HPO":
-        q = st.text_input("Search phenotypic abnormality:", placeholder="Search").lower()
-        filtered = filter_nodes(HPO_TREE, q)
-        expanded = expanded_values(filtered) if q else []
-    
-        with st.container(height=500, border=False):
-            selected = tree_select(
-                nodes=filtered,
-                expanded=expanded,
-                check_model="leaf",
-                only_leaf_checkboxes=True,
-            )
-       
-    elif ontology_choice == "MONDO":
-        q = st.text_input("Search disease:", placeholder="Search").lower()
-        filtered = filter_nodes(MONDO_TREE, q)
-        expanded = expanded_values(filtered) if q else []
-    
-        with st.container(height=500, border=False):
-            selected = tree_select(
-                nodes=filtered,
-                expanded=expanded,
-                check_model="leaf",
-                only_leaf_checkboxes=True,
-            )
-    
-    
+    with tab1:
+        options = ["HPO", "MONDO"]
+        ontology_choice = st.segmented_control("Select ontology:", options, selection_mode="single")
+
+        if ontology_choice == "HPO":
+            q = st.text_input("Search phenotypic abnormality:", placeholder="Search").lower()
+            filtered = [HPO_TREE[0]] if not q else []
+            selected_hp = sac.tree(items=filtered, height=500, open_all=True, checkbox=False, show_line=True)
+
+        elif ontology_choice == "MONDO":
+            q = st.text_input("Search disease:", placeholder="Search").lower()
+            filtered = [MONDO_TREE[0]] if not q else []
+            selected_mondo = sac.tree(items=filtered, height=500, open_all=True, checkbox=False, show_line=True)
+
+    with tab2:
+        if "chat_messages" not in st.session_state:
+            st.session_state.chat_messages = []
+
+        for role, content in st.session_state.chat_messages:
+            with st.chat_message(role):
+                st.markdown(content)
+
+        user_msg = st.chat_input("Ask the agent…")
+        if user_msg:
+            st.session_state.chat_messages.append(("user", user_msg))
+            with st.chat_message("user"):
+                st.markdown(user_msg)
+
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking…"):
+                    try:
+                        reply = call_agent_with_retry(user_msg)
+                        st.session_state.last_agent_result = reply
+                    except Exception as e:
+                        reply = f"Error: {e}"
+                    st.markdown(getattr(reply, "output", str(reply)))
+                    st.session_state.chat_messages.append(("assistant", str(reply)))
+
+# -------------------
+# Right column
+# -------------------
 with col2:
     st.header("HPO Annotations")
-    name_series = hpoa_df["disease_name"].astype(str)
     opts = sorted(hpoa_df["disease_name"].dropna().unique())
-
-    # max width of disease names
-    st.markdown("""
-    <style>
-        .stMultiSelect [data-baseweb=select] span{
-            max-width: 300px;
-            font-size: 1rem;
-        }
-    </style>
-    """, unsafe_allow_html=True)
-
     picked = st.multiselect("Select diseases to edit:", options=opts)
 
     if picked:
-        copy_df = hpoa_df[hpoa_df["disease_name"].isin(picked)].copy().reset_index(drop = True)
-        edited = st.data_editor(
-            copy_df,
-            hide_index=True,
-            num_rows="dynamic",
-            key="edit_copy"
-        )
+        copy_df = hpoa_df[hpoa_df["disease_name"].isin(picked)].copy().reset_index(drop=True)
 
-    st.page_link("https://hpo-annotation-qc.readthedocs.io/en/latest/annotationFormat.html", label="HPOA Format", icon="ℹ️")
+        if "last_agent_result" in st.session_state:
+            agent_df = annotations_to_df(st.session_state.last_agent_result)
+        else:
+            agent_df = pd.DataFrame()
 
-    if st.button("Save edits"):
-        st.session_state.edited_copy = edited
-        st.success("Edits saved")
+        if not agent_df.empty:
+            st.subheader("Agent-suggested edits")
+            edited = st.data_editor(agent_df, hide_index=True, num_rows="dynamic", key="agent_edits")
 
+            st.dataframe(style_agent_edits(agent_df), width="stretch")
 
+            if st.button("Approve Edits"):
+                for _, row in edited.iterrows():
+                    if row["status"] == "removed":
+                        hpoa_df = hpoa_df[
+                            ~(
+                                (hpoa_df["database_id"] == row["database_id"]) &
+                                (hpoa_df["hpo_id"] == row["hpo_id"])
+                            )
+                        ]
+                    else:
+                        hpoa_df = pd.concat(
+                            [hpoa_df, row.drop(["status", "rationale"]).to_frame().T],
+                            ignore_index=True,
+                        )
+                st.success("Approved agent edits applied!")
+        else:
+            edited = st.data_editor(copy_df, hide_index=True, num_rows="dynamic", key="manual_edits")
+            if st.button("Approve Edits"):
+                st.session_state.edited_copy = edited
+                st.success("Edits approved")
 
-
-# st.sidebar.write(return_select)
+    st.page_link(
+        "https://hpo-annotation-qc.readthedocs.io/en/latest/annotationFormat.html",
+        label="HPOA Format", icon="ℹ️"
+    )

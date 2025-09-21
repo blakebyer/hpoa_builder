@@ -6,7 +6,6 @@ from pydantic_ai import Agent, RunContext, Tool
 from pydantic import BaseModel, ValidationError, Field
 from typing import Optional, Literal, List
 from oaklib import get_adapter
-#from oaklib.utilities.basic_utils import get_curie_prefix
 from oaklib.datamodels.search import SearchConfiguration
 
 load_dotenv()
@@ -20,7 +19,7 @@ mondo = get_adapter("ontobee:mondo")
 
 HPOA_AGENT_PROMPT = (
     """
-    You are an expert biocurator familiar with the OBO Ontologies including the Human Phenotype Ontology (HP) and Mondo Disease Ontology (MONDO).
+    You are an expert biocurator familiar with the OBO Ontologies including the Human Phenotype Ontology (HP) and Monarch Disease Ontology (MONDO).
     Your task is to assist the user in creation of Human Phenotype Ontology Annotation (.hpoa aka HPOA) files, a schema used to describe phenotypes annotated to a disease, given input text, a list of PubMed IDs (PMID), or an existing .hpoa file requiring curation assistance. You should use the `search_hp` function to curate `hpo_id`, `onset`, or `frequency` fields. Only include `onset` or `frequency` if either show up in the input text. You should use the `search_mondo` and `get_omim_terms` functions to find `database_id` (MONDO:RefId OR OMIM:mimNumber) and `disease_name` (MONDO:Label OR OMIM:preferredTitle). For the `reference` field use the OMIM:mimNumber. You should show your reasoning, and your candidate changes to the existing .hpoa file (as many as appropriate). IMPORTANT: precision is paramount. If a user requests help to improve an .hpoa for a given disease, only return phenotypic abnormalities and corresponding evidence associated with that SAME disease. Before doing this, try varying search terms of HPO, MONDO, and OMIM using your context to ensure its the same disease (synonyms are okay). You must NEVER guess ontology or database terms, the query results should always be the source of truth. Additionally, only fill out fields if there is sufficient evidence in the text for asserting that association. Even if multiple phenotypes apply to the same disease, return each annotation as a separate object in the list. Return a JSON array of as many HPOA annotation rows as appropriate. For instance:
     [
     {
